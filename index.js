@@ -47,42 +47,43 @@ app.get("/version", async (req, res) => {
 
     // 2) Si no está en JSON-LD, abrir modal "Información de la aplicación"
     if (!version) {
-      const btns = await page.$x("//*[contains(text(),'Información de la aplicación')]");
-      if (btns.length) {
-        await btns[0].click();
-        await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
+      // Clic en el botón usando document.evaluate en vez de page.$x
+      await page.evaluate(() => {
+        const xpath = "//*[contains(text(),'Información de la aplicación')]";
+        const el = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (el) (el as HTMLElement).click();
+      });
 
-        version = await page.evaluate(() => {
-          const dialog = document.querySelector('div[role="dialog"]');
-          if (!dialog) return null;
+      await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
 
-          // Buscar texto que ponga "Versión" y luego leer el siguiente span
-          const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_ELEMENT, null);
-          let lastLabel = "";
-          let versionText = "";
+      version = await page.evaluate(() => {
+        const dialog = document.querySelector('div[role="dialog"]');
+        if (!dialog) return null;
 
-          while (walker.nextNode()) {
-            const el = walker.currentNode;
-            const text = (el.textContent || "").trim();
-            if (!text) continue;
+        const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_ELEMENT, null);
+        let lastLabel = "";
+        let versionText = "";
 
-            if (/^Versi[oó]n(\s+actual)?$/i.test(text)) {
-              lastLabel = "version";
-              continue;
-            }
-            if (lastLabel === "version") {
-              versionText = text;
-              break;
-            }
+        while (walker.nextNode()) {
+          const el = walker.currentNode;
+          const text = (el.textContent || "").trim();
+          if (!text) continue;
+
+          if (/^Versi[oó]n(\s+actual)?$/i.test(text)) {
+            lastLabel = "version";
+            continue;
           }
+          if (lastLabel === "version") {
+            versionText = text;
+            break;
+          }
+        }
 
-          if (versionText) return versionText;
+        if (versionText) return versionText;
 
-          // Fallback: regex
-          const m = (dialog.textContent || "").match(/\b\d+(?:\.\d+){1,3}\b/);
-          return m ? m[0] : null;
-        });
-      }
+        const m = (dialog.textContent || "").match(/\b\d+(?:\.\d+){1,3}\b/);
+        return m ? m[0] : null;
+      });
     }
 
     res.json({ package: pkg, version: version || "N/A" });

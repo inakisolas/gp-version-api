@@ -26,13 +26,13 @@ app.get("/version", async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.goto(`https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}&hl=es&gl=US`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
-    });
+    await page.goto(
+      `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}&hl=es&gl=US`,
+      { waitUntil: "domcontentloaded", timeout: 60000 }
+    );
 
-    // Intento extraer versión desde JSON-LD
-    let result = await page.evaluate(() => {
+    // 1) Intento: leer JSON-LD
+    let version = await page.evaluate(() => {
       const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
       for (const s of scripts) {
         try {
@@ -45,7 +45,47 @@ app.get("/version", async (req, res) => {
       return null;
     });
 
-    res.json({ package: pkg, version: result || "N/A" });
+    // 2) Si no está en JSON-LD, abrir modal "Información de la aplicación"
+    if (!version) {
+      const btns = await page.$x("//*[contains(text(),'Información de la aplicación')]");
+      if (btns.length) {
+        await btns[0].click();
+        await page.waitForSelector('div[role="dialog"]', { timeout: 15000 });
+
+        version = await page.evaluate(() => {
+          const dialog = document.querySelector('div[role="dialog"]');
+          if (!dialog) return null;
+
+          // Buscar texto que ponga "Versión" y luego leer el siguiente span
+          const walker = document.createTreeWalker(dialog, NodeFilter.SHOW_ELEMENT, null);
+          let lastLabel = "";
+          let versionText = "";
+
+          while (walker.nextNode()) {
+            const el = walker.currentNode;
+            const text = (el.textContent || "").trim();
+            if (!text) continue;
+
+            if (/^Versi[oó]n(\s+actual)?$/i.test(text)) {
+              lastLabel = "version";
+              continue;
+            }
+            if (lastLabel === "version") {
+              versionText = text;
+              break;
+            }
+          }
+
+          if (versionText) return versionText;
+
+          // Fallback: regex
+          const m = (dialog.textContent || "").match(/\b\d+(?:\.\d+){1,3}\b/);
+          return m ? m[0] : null;
+        });
+      }
+    }
+
+    res.json({ package: pkg, version: version || "N/A" });
   } catch (e) {
     res.status(500).json({ package: pkg, error: e.message });
   } finally {

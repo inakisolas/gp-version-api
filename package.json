@@ -9,7 +9,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "puppeteer": "^22.10.0",
+    "puppeteer-core": "^22.10.0",
+    "@sparticuz/chromium": "^119.0.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
